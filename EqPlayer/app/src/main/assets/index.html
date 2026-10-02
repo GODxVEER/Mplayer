@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Equalizer Music Player</title>
+<style>
+:root{--bg:#eef0ee;--panel:#fff;--line:#d5d9d6;--text:#16201d;--mute:#65726d;--accent:#0b8f78;--accent-ink:#fff;--viz:#0b8f78;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101417;--panel:#192024;--line:#2a343a;--text:#e7efec;--mute:#8a9a94;--accent:#4fe0bf;--accent-ink:#06211b;--viz:#4fe0bf}}
+:root[data-theme="dark"]{--bg:#101417;--panel:#192024;--line:#2a343a;--text:#e7efec;--mute:#8a9a94;--accent:#4fe0bf;--accent-ink:#06211b;--viz:#4fe0bf}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 40px;display:grid;gap:16px}
+h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+button{font:inherit;color:var(--text);background:transparent;border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+#viz{width:100%;height:150px;display:block;border-radius:10px;background:var(--bg)}
+.now{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin:12px 0 4px}
+#title{font-size:18px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#time{color:var(--mute);font-variant-numeric:tabular-nums;white-space:nowrap}
+input[type=range]{accent-color:var(--accent);width:100%}
+.ctrls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin-top:12px}
+.ctrls .play{width:64px;height:44px;font-size:18px}
+.vol{display:flex;gap:8px;align-items:center;min-width:150px;flex:1;max-width:220px}
+.eqhead{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;margin-bottom:12px}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.bands{display:grid;grid-template-columns:repeat(11,1fr);gap:4px;text-align:center}
+.band{display:flex;flex-direction:column;align-items:center;gap:6px}
+.band input{writing-mode:vertical-lr;direction:rtl;width:28px;height:150px;margin:0}
+.band small{color:var(--mute);font-size:11px}
+.band output{font-size:11px;font-variant-numeric:tabular-nums}
+ul{list-style:none;margin:0;padding:0;max-height:260px;overflow-y:auto}
+li{display:flex;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer}
+li:hover{background:var(--bg)}
+li.cur{background:var(--bg);color:var(--accent);font-weight:600}
+li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+textarea{width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;resize:vertical}
+.hint{color:var(--mute);font-size:13px;margin:8px 0 0}
+li.miss{color:var(--mute)}
+body.drag main{outline:2px dashed var(--accent);outline-offset:-6px}
+.empty{color:var(--mute);text-align:center;padding:20px}
+@media (max-width:560px){.band input{height:120px}.bands{gap:0}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Equalizer Music Player</h1>
+  <div>
+    <button id="addBtn" class="primary">Add songs</button>
+    <button id="dirBtn">Add folder</button>
+    <input id="file" type="file" accept="audio/*" multiple hidden>
+    <input id="dir" type="file" webkitdirectory multiple hidden>
+  </div>
+</header>
+
+<section class="panel" aria-label="Paste song list">
+  <div class="eqhead">
+    <strong>Paste your song list</strong>
+    <button id="goBtn" class="primary">Make queue &amp; shuffle</button>
+  </div>
+  <textarea id="paste" rows="4" placeholder="Paste song names here, one per line. Then add the audio files (or drop them anywhere on this page) and each file is matched to its name."></textarea>
+  <p class="hint" id="hint">Tip: you can also drop a whole folder of songs on this page. Shuffle starts automatically.</p>
+</section>
+
+<section class="panel" aria-label="Player">
+  <canvas id="viz" aria-hidden="true"></canvas>
+  <div class="now"><div id="title">No song loaded</div><div id="time">0:00 / 0:00</div></div>
+  <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+  <div class="ctrls">
+    <button id="shuffle" class="on" title="Shuffle" aria-pressed="true">Shuffle</button>
+    <button id="prev" title="Previous">&#9198;</button>
+    <button id="play" class="primary play" title="Play / pause">&#9654;</button>
+    <button id="next" title="Next">&#9197;</button>
+    <button id="repeat" title="Repeat" aria-pressed="false">Repeat</button>
+    <label class="vol">Vol <input id="vol" type="range" min="0" max="100" value="80" aria-label="Volume"></label>
+  </div>
+</section>
+
+<section class="panel" aria-label="Equalizer">
+  <div class="eqhead">
+    <div class="presets" id="presets"></div>
+    <button id="reset">Reset</button>
+  </div>
+  <div class="bands" id="bands"></div>
+</section>
+
+<section class="panel" aria-label="Playlist">
+  <ul id="list"><li class="empty">Add songs from your device to start listening.</li></ul>
+</section>
+</main>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const FREQ=[32,64,125,250,500,1000,2000,4000,8000,16000];
+const PRESETS={Flat:[0,0,0,0,0,0,0,0,0,0],"Bass boost":[5,4,3,2,0,0,0,0,0,0],"Treble boost":[0,0,0,0,0,0,1,3,4,5],Vocal:[-2,-1,0,1,3,3,2,1,0,-1],Rock:[4,3,1,-1,-1,0,2,3,4,4],Electronic:[4,3,1,0,-2,1,1,2,4,4],Acoustic:[3,3,2,1,1,1,2,2,2,1],Loudness:[4,3,0,0,-1,0,-1,0,3,2]};
+const audio=new Audio();audio.preload="metadata";
+let ctx,src,pre,filters=[],analyser,gain,tracks=[],cur=-1,shuffle=true,repeat=false;
+const gains=Array(10).fill(0);let preamp=0;
+
+// Build equalizer controls
+const bands=$("bands");
+function bandEl(label,idx,isPre){
+  const d=document.createElement("div");d.className="band";
+  const o=document.createElement("output");o.textContent="0";
+  const r=document.createElement("input");r.type="range";r.min=-12;r.max=12;r.step=.5;r.value=0;
+  r.setAttribute("aria-label",label+(isPre?"":" Hz"));
+  r.addEventListener("input",()=>{
+    const v=+r.value;o.textContent=(v>0?"+":"")+v;
+    if(isPre)preamp=v;
+    else{gains[idx]=v;if(filters[idx])filters[idx].gain.value=v}
+    applyPre();
+    clearPreset();
+  });
+  const s=document.createElement("small");s.textContent=label;
+  d.append(o,r,s);bands.appendChild(d);return {r,o};
+}
+const ctrl=[bandEl("Pre",0,true)];
+FREQ.forEach((f,i)=>ctrl.push(bandEl(f>=1000?(f/1000)+"k":String(f),i,false)));
+function setBands(arr,pr){
+  arr.forEach((v,i)=>{gains[i]=v;const c=ctrl[i+1];c.r.value=v;c.o.textContent=(v>0?"+":"")+v;if(filters[i])filters[i].gain.value=v});
+  preamp=pr||0;ctrl[0].r.value=preamp;ctrl[0].o.textContent=(preamp>0?"+":"")+preamp;applyPre();
+}
+const pwrap=$("presets");
+Object.keys(PRESETS).forEach(n=>{
+  const b=document.createElement("button");b.textContent=n;b.dataset.n=n;
+  b.onclick=()=>{setBands(PRESETS[n],0);clearPreset();b.classList.add("on")};pwrap.appendChild(b);
+});
+function clearPreset(){pwrap.querySelectorAll("button").forEach(b=>b.classList.remove("on"))}
+$("reset").onclick=()=>{setBands(PRESETS.Flat,0);clearPreset();pwrap.firstChild.classList.add("on")};
+pwrap.firstChild.classList.add("on");
+
+// Headroom: lower the input by most of the biggest boost so loud songs do not clip
+function applyPre(){if(!pre)return;const mx=Math.max(0,...gains);pre.gain.value=Math.pow(10,(preamp-0.8*mx)/20)}
+// Audio graph (created on first user play)
+function initAudio(){
+  if(ctx)return;
+  ctx=new (window.AudioContext||window.webkitAudioContext)({latencyHint:"playback"});
+  src=ctx.createMediaElementSource(audio);
+  pre=ctx.createGain();applyPre();
+  let node=pre;src.connect(pre);
+  FREQ.forEach((f,i)=>{
+    const b=ctx.createBiquadFilter();
+    b.type=i===0?"lowshelf":i===9?"highshelf":"peaking";
+    b.frequency.value=f;b.Q.value=1.41;b.gain.value=gains[i];
+    node.connect(b);node=b;filters.push(b);
+  });
+  analyser=ctx.createAnalyser();analyser.fftSize=256;analyser.smoothingTimeConstant=.82;
+  const lim=ctx.createDynamicsCompressor();lim.threshold.value=-2;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=.002;lim.release.value=.12;
+  node.connect(lim);lim.connect(analyser);analyser.connect(ctx.destination);
+  draw();
+}
+
+// Playlist
+function fmt(t){if(!isFinite(t))return"0:00";const m=Math.floor(t/60),s=Math.floor(t%60);return m+":"+String(s).padStart(2,"0")}
+const norm=x=>x.toLowerCase().replace(/\.[^.]+$/,"").replace(/[^a-z0-9\u0900-\u097f]/g,"");
+const playable=()=>tracks.map((t,i)=>t.url?i:-1).filter(i=>i>=0);
+function render(){
+  const ul=$("list");ul.innerHTML="";
+  if(!tracks.length){ul.innerHTML='<li class="empty">Add songs, drop a folder, or paste a list to start listening.</li>';return}
+  tracks.forEach((t,i)=>{
+    const li=document.createElement("li");li.className=(i===cur?"cur ":"")+(t.url?"":"miss");
+    const a=document.createElement("span");a.textContent=t.name;
+    const b=document.createElement("span");b.textContent=i===cur?"Playing":(t.url?"":"No file yet");
+    li.append(a,b);if(t.url)li.onclick=()=>load(i,true);ul.appendChild(li);
+  });
+  const p=playable().length;$("hint").textContent=tracks.length+" in queue, "+p+" ready to play"+(p<tracks.length?". Add or drop the remaining audio files to fill the gaps.":".");
+}
+function load(i,play){
+  cur=i;audio.src=tracks[i].url;$("title").textContent=tracks[i].name;render();
+  if(play)start();
+}
+function start(){
+  initAudio();ctx.resume();
+  audio.play().catch(()=>{});
+}
+function addFiles(files){
+  files=[...files].filter(f=>f.type.startsWith("audio/")||/\.(mp3|wav|flac|aac|m4a|ogg|opus|wma)$/i.test(f.name));
+  if(!files.length)return;
+  const wasEmpty=!playable().length;
+  files.forEach(f=>{
+    const name=f.name.replace(/\.[^.]+$/,""),n=norm(f.name),url=URL.createObjectURL(f);
+    const slot=tracks.find(t=>!t.url&&t.key.length>=3&&(n.includes(t.key)||t.key.includes(n)));
+    if(slot){slot.url=url;slot.name=name}else tracks.push({name,url,key:n});
+  });
+  render();
+  if(wasEmpty&&playable().length){shuffleStart()}
+}
+function shuffleStart(){
+  const p=playable();if(!p.length)return;
+  shuffle=true;$("shuffle").classList.add("on");$("shuffle").setAttribute("aria-pressed","true");
+  load(p[Math.floor(Math.random()*p.length)],true);
+}
+$("addBtn").onclick=()=>$("file").click();
+$("dirBtn").onclick=()=>$("dir").click();
+$("file").onchange=e=>{addFiles(e.target.files);e.target.value=""};
+$("dir").onchange=e=>{addFiles(e.target.files);e.target.value=""};
+$("goBtn").onclick=()=>{
+  const lines=$("paste").value.split(/\r?\n/).map(l=>l.trim()).filter(l=>l&&!/^\d+$/.test(l)&&!/^\d+:\d\d$/.test(l)&&!/\bago$/i.test(l));
+  const seen=new Set(tracks.map(t=>t.key));
+  lines.forEach(l=>{const name=l.replace(/^\d+[.)]\s+/,""),key=norm(name);if(key&&!seen.has(key)){seen.add(key);tracks.push({name,url:null,key})}});
+  render();
+  if(playable().length)shuffleStart();else $("file").click();
+};
+["dragenter","dragover"].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();document.body.classList.add("drag")}));
+document.addEventListener("dragleave",e=>{if(!e.relatedTarget)document.body.classList.remove("drag")});
+async function walk(entry,out){
+  if(entry.isFile)await new Promise(r=>entry.file(f=>{out.push(f);r()},r));
+  else if(entry.isDirectory){
+    const rd=entry.createReader();let batch;
+    do{batch=await new Promise(r=>rd.readEntries(r,()=>r([])));for(const c of batch)await walk(c,out)}while(batch.length);
+  }
+}
+document.addEventListener("drop",async e=>{
+  e.preventDefault();document.body.classList.remove("drag");
+  const out=[],items=e.dataTransfer.items;
+  if(items&&items[0]&&items[0].webkitGetAsEntry){
+    const ents=[...items].map(i=>i.webkitGetAsEntry()).filter(Boolean);
+    for(const en of ents)await walk(en,out);
+  }else out.push(...e.dataTransfer.files);
+  addFiles(out);
+});
+function step(d){
+  const p=playable();if(!p.length)return;
+  let n;
+  if(shuffle){do{n=p[Math.floor(Math.random()*p.length)]}while(p.length>1&&n===cur)}
+  else{let k=p.indexOf(cur)+d;if(k>=p.length)k=0;if(k<0)k=p.length-1;n=p[k]}
+  load(n,true);
+}
+$("play").onclick=()=>{
+  if(!playable().length){$("file").click();return}
+  if(audio.paused)start();else audio.pause();
+};
+$("next").onclick=()=>step(1);
+$("prev").onclick=()=>{if(audio.currentTime>3)audio.currentTime=0;else step(-1)};
+$("shuffle").onclick=e=>{shuffle=!shuffle;e.target.classList.toggle("on",shuffle);e.target.setAttribute("aria-pressed",shuffle)};
+$("repeat").onclick=e=>{repeat=!repeat;e.target.classList.toggle("on",repeat);e.target.setAttribute("aria-pressed",repeat)};
+audio.onplay=()=>$("play").innerHTML="&#10074;&#10074;";
+audio.onpause=()=>$("play").innerHTML="&#9654;";
+audio.onended=()=>{if(repeat){audio.currentTime=0;start()}else step(1)};
+audio.ontimeupdate=()=>{
+  $("time").textContent=fmt(audio.currentTime)+" / "+fmt(audio.duration);
+  if(!seeking&&audio.duration)$("seek").value=audio.currentTime/audio.duration*1000;
+};
+let seeking=false;
+$("seek").oninput=()=>{seeking=true;if(audio.duration)audio.currentTime=$("seek").value/1000*audio.duration};
+$("seek").onchange=()=>seeking=false;
+$("vol").oninput=e=>audio.volume=e.target.value/100;
+audio.volume=.8;
+document.addEventListener("keydown",e=>{
+  if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON")return;
+  if(e.code==="Space"){e.preventDefault();$("play").click()}
+  if(e.code==="ArrowRight")audio.currentTime+=5;
+  if(e.code==="ArrowLeft")audio.currentTime-=5;
+});
+
+// Spectrum visualizer
+const cv=$("viz"),c2=cv.getContext("2d");
+function draw(){
+  requestAnimationFrame(draw);
+  const dpr=window.devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;
+  if(cv.width!==w*dpr){cv.width=w*dpr;cv.height=h*dpr}
+  c2.setTransform(dpr,0,0,dpr,0,0);c2.clearRect(0,0,w,h);
+  const data=new Uint8Array(analyser.frequencyBinCount);analyser.getByteFrequencyData(data);
+  const n=48,bw=w/n,col=getComputedStyle(document.documentElement).getPropertyValue("--viz").trim()||"#4fe0bf";
+  c2.fillStyle=col;
+  for(let i=0;i<n;i++){
+    const idx=Math.floor(Math.pow(i/n,1.6)*(data.length-8))+1;
+    const v=data[idx]/255,bh=Math.max(2,v*h*.95);
+    c2.fillRect(i*bw+2,h-bh,bw-4,bh);
+  }
+}
+})();
+</script>
+</body>
+</html>
